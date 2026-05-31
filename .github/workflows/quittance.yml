@@ -1,0 +1,32 @@
+name: Quittance de loyer
+
+on:
+  workflow_dispatch:
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: npm install
+
+      - run: npx playwright install chromium
+
+      - run: npm run quittance
+        env:
+          RENTILA_EMAIL: ${{ secrets.RENTILA_EMAIL || '' }}
+          RENTILA_PASSWORD: ${{ secrets.RENTILA_PASSWORD || '' }}
+          TENANT_EMAILS: ${{ secrets.TENANT_EMAILS || 'test@example.com' }}
+          TENANT_NAMES: ${{ secrets.TENANT_NAMES || '' }}
+          DRY_RUN: true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: downloads-quittance
+          path: downloads/

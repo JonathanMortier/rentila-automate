@@ -1,0 +1,19 @@
+{
+  "name": "rentila-automate",
+  "version": "1.0.0",
+  "description": "Automatisation du téléchargement des avis d'échéance et quittances Rentila",
+  "type": "module",
+  "scripts": {
+    "avis": "npx tsx src/index.ts avis",
+    "quittance": "npx tsx src/index.ts quittance"
+  },
+  "dependencies": {
+    "playwright": "^1.52.0",
+    "dotenv": "^16.4.7"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "@types/node": "^22.12.0"
+  }
+}
