@@ -104,7 +104,7 @@ Chemin local  : /home/.../downloads/juin-2026/avis-echeance-juin-2026.pdf
 ======================
 ```
 
-Les locataires sont mis en CC. Vous n'avez plus qu'à transférer le PDF depuis votre messagerie.
+Les locataires sont mis en CC.
 
 ## Automatisation avec GitHub Actions
 
@@ -123,14 +123,17 @@ git push -u origin main
 
 Allez dans votre repo GitHub → **Settings** → **Secrets and variables** → **Actions** → **New repository secret**.
 
-Créez ces 4 secrets :
+Créez ces secrets :
 
 | Secret | Valeur |
 |---|---|
 | `RENTILA_EMAIL` | Identifiant de connexion Rentila |
 | `RENTILA_PASSWORD` | Mot de passe Rentila |
-| `TENANT_EMAILS` | Emails des locataires séparés par des virgules (ex: `alice@mail.com,bob@mail.com`) |
-| `TENANT_NAMES` | Prénoms ou nom des locataires (ex: `Alice & Bob`) |
+| `TENANT_EMAILS` | Emails des locataires séparés par des virgules |
+| `TENANT_NAMES` | Prénoms ou nom des locataires |
+| `GMAIL_CLIENT_ID` | Client ID OAuth2 Google (pour brouillon Gmail) |
+| `GMAIL_CLIENT_SECRET` | Client Secret OAuth2 Google |
+| `GMAIL_REFRESH_TOKEN` | Refresh token obtenu via `npm run auth:gmail` |
 
 ### 3. Workflows disponibles
 
@@ -165,7 +168,9 @@ rentila-automate/
 ├── src/
 │   ├── index.ts               # Point d'entrée (CLI)
 │   ├── rentila.ts             # Automation Playwright
-│   ├── mailer.ts              # Création des brouillons email
+│   ├── mailer.ts              # Création des brouillons email locaux
+│   ├── gmail.ts               # Création brouillon Gmail (API OAuth2)
+│   ├── auth-gmail.ts          # Script d'authentification Gmail one-shot
 │   └── config.ts              # Configuration et mois en français
 ├── downloads/                 # PDFs et brouillons générés (gitignoré)
 ├── debug/                     # Captures d'écran en mode DEBUG (gitignoré)
@@ -183,6 +188,55 @@ rentila-automate/
 - Utilisez un compte Rentila dédié si possible
 - Ne partagez jamais votre `.env`
 
-## Personnalisation des emails
+## Brouillon Gmail (optionnel)
 
-Modifiez le contenu des brouillons dans `src/mailer.ts`.
+Au lieu d'un simple fichier `.txt`, le script peut créer un vrai brouillon directement dans Gmail.
+
+### Configuration
+
+1. Allez sur [console.cloud.google.com](https://console.cloud.google.com) → créez un projet → activez **Gmail API**
+2. Créez un identifiant OAuth2 (type "Application de bureau")
+3. Ajoutez `http://localhost:8080/oauth2callback` dans les **Authorized redirect URIs**
+4. Ajoutez `GMAIL_CLIENT_ID` et `GMAIL_CLIENT_SECRET` dans `.env`
+5. Exécutez :
+   ```bash
+   npm run auth:gmail
+   ```
+6. Autorisez l'accès dans le navigateur, puis ajoutez `GMAIL_REFRESH_TOKEN` dans `.env`
+
+### Fonctionnement
+
+Si les 3 variables Gmail sont présentes, un brouillon est créé dans Gmail après chaque téléchargement. Sinon, seul le fichier `.txt` local est généré (pas de blocage).
+
+## Ce qu'il reste à faire
+
+### 1. Contournement reCAPTCHA (connexion Rentila)
+
+La connexion à Rentila est actuellement bloquée par Google reCAPTCHA après trop de tentatives. Solutions à explorer :
+- Soumettre le formulaire de login directement par requête HTTP (POST vers `/register/?action=login`) avec les headers adaptés
+- Attendre que le rate-limit retombe (24-48h)
+- Utiliser un service de résolution de captcha (non souhaité — payant)
+
+### 2. Navigation SPA `/#payments`
+
+Le chargement des données via le hash routing de l'application AngularJS est capricieux en headless. Solution testée :
+- `page.waitForFunction(() => document.querySelector('tr[id^="tr_"]'))` avec timeout long
+- À valider une fois le login fonctionnel
+
+### 3. Marquer "Payé" + quittance
+
+La fonction `markPaidAndDownloadQuittance` (`npm run quittance`) est écrite mais non testée. Elle :
+1. Navigue vers `/#payments/received?id={id}`
+2. Soumet le formulaire de paiement
+3. Télécharge la quittance via `/landlord/payments/{id}/download`
+
+### 4. Supprimer `DRY_RUN: true` du workflow
+
+Actuellement en dry run pour tester le pipeline GitHub sans connexion Rentila. Quand la connexion fonctionnera :
+- Retirer `DRY_RUN: true` des fichiers `.github/workflows/*.yml`
+- Les secrets GitHub doivent être configurés (cf. section secrets)
+
+### 5. Notifications / Monitoring
+
+- Ajouter une notification Slack/Discord/email en cas d'échec du workflow
+- Logger les résultats pour traçabilité
