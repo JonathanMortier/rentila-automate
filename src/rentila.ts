@@ -3,6 +3,7 @@ import path from 'node:path'
 import fs from 'node:fs'
 import { CONFIG, monthLabel } from './config.js'
 import { createDraft } from './mailer.js'
+import { createGmailDraft } from './gmail.js'
 
 const DOWNLOADS = path.resolve('downloads')
 const DEBUG = !!process.env.DEBUG
@@ -17,6 +18,7 @@ async function dryRun(type: 'avis' | 'quittance', label: string, pdfPath: string
     tenantNames: CONFIG.tenants.names,
     tenantEmails: CONFIG.tenants.emails,
   })
+  await pushGmailDraft(type, label, pdfPath)
 }
 
 export async function downloadAvis(): Promise<void> {
@@ -35,13 +37,14 @@ export async function downloadAvis(): Promise<void> {
     const paymentId = await getCurrentPaymentId(page)
     const savedPath = await downloadDirect(page, paymentId, pdfPath, true)
 
-    createDraft({
+    await createDraft({
       type: 'avis',
       month: label,
       pdfPath: savedPath,
       tenantNames: CONFIG.tenants.names,
       tenantEmails: CONFIG.tenants.emails,
     })
+    await pushGmailDraft('avis', label, savedPath)
   } finally {
     await browser.close()
   }
@@ -76,16 +79,34 @@ export async function markPaidAndDownloadQuittance(): Promise<void> {
 
     const savedPath = await downloadDirect(page, paymentId, pdfPath, false)
 
-    createDraft({
+    await createDraft({
       type: 'quittance',
       month: label,
       pdfPath: savedPath,
       tenantNames: CONFIG.tenants.names,
       tenantEmails: CONFIG.tenants.emails,
     })
+    await pushGmailDraft('quittance', label, savedPath)
   } finally {
     await browser.close()
   }
+}
+
+async function pushGmailDraft(type: 'avis' | 'quittance', month: string, pdfPath: string): Promise<void> {
+  const isAvis = type === 'avis'
+  const subject = isAvis
+    ? `Avis d'échéance du mois de ${month}`
+    : `Quittance du mois de ${month}`
+  const body = isAvis
+    ? `Bonjour,\n\nVous trouverez en pièce jointe l'avis d'échéance du mois de ${month}.\n\nCordialement`
+    : `Bonjour,\n\nVous trouverez en pièce jointe la quittance du mois de ${month}.\n\nCordialement`
+
+  await createGmailDraft({
+    to: CONFIG.tenants.emails,
+    subject,
+    body,
+    pdfPath,
+  })
 }
 
 async function login(page: Page): Promise<void> {
