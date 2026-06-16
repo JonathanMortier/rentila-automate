@@ -15,8 +15,7 @@ async function dryRun(type: 'avis' | 'quittance', label: string, pdfPath: string
     type,
     month: label,
     pdfPath,
-    tenantNames: CONFIG.tenants.names,
-    tenantEmails: CONFIG.tenants.emails,
+    tenantEmails: CONFIG.tenants.emails
   })
   await pushGmailDraft(type, label, pdfPath)
 }
@@ -28,7 +27,10 @@ export async function downloadAvis(): Promise<void> {
 
   if (process.env.DRY_RUN) return dryRun('avis', label, pdfPath)
 
-  const browser = await chromium.launch({ headless: !DEBUG })
+  const browser = await chromium.launch({
+    headless: !DEBUG,
+    slowMo: DEBUG ? 300 : undefined,
+  })
   const page = await browser.newPage()
   await page.setViewportSize({ width: 1280, height: 900 })
 
@@ -41,11 +43,14 @@ export async function downloadAvis(): Promise<void> {
       type: 'avis',
       month: label,
       pdfPath: savedPath,
-      tenantNames: CONFIG.tenants.names,
       tenantEmails: CONFIG.tenants.emails,
     })
     await pushGmailDraft('avis', label, savedPath)
   } finally {
+    if (DEBUG) {
+      console.log('  🔍 Mode debug – navigateur laissé ouvert. Appuie sur Ctrl+C pour quitter.')
+      await new Promise(() => {})
+    }
     await browser.close()
   }
 }
@@ -57,7 +62,10 @@ export async function markPaidAndDownloadQuittance(): Promise<void> {
 
   if (process.env.DRY_RUN) return dryRun('quittance', label, pdfPath)
 
-  const browser = await chromium.launch({ headless: !DEBUG })
+  const browser = await chromium.launch({
+    headless: !DEBUG,
+    slowMo: DEBUG ? 300 : undefined,
+  })
   const page = await browser.newPage()
   await page.setViewportSize({ width: 1280, height: 900 })
 
@@ -65,17 +73,14 @@ export async function markPaidAndDownloadQuittance(): Promise<void> {
     await login(page)
     const paymentId = await getCurrentPaymentId(page)
 
-    const payUrl = `https://www.rentila.com/landlord/#payments/received?id=${paymentId}`
-    console.log(`→ Enregistrement du paiement...`)
-    await page.goto(payUrl, { waitUntil: 'networkidle' })
+    // Changer le statut de "Pas payé" à "Payé" via la selectbox
+    console.log(`→ Marquage du paiement ${paymentId} comme Payé...`)
+    const select = page.locator(`#changeStatus${paymentId}`)
+    await select.waitFor({ state: 'visible', timeout: 10000 })
+    await select.selectOption('2')
     await page.waitForTimeout(2000)
-
-    const submitBtn = page.locator('button[type="submit"], input[type="submit"]').first()
-    if (await submitBtn.isVisible().catch(() => false)) {
-      await submitBtn.click()
-      await page.waitForTimeout(2000)
-      console.log('✓ Paiement enregistré')
-    }
+    await screenshot(page, '05-paid')
+    console.log('✓ Paiement marqué Payé')
 
     const savedPath = await downloadDirect(page, paymentId, pdfPath, false)
 
@@ -83,11 +88,14 @@ export async function markPaidAndDownloadQuittance(): Promise<void> {
       type: 'quittance',
       month: label,
       pdfPath: savedPath,
-      tenantNames: CONFIG.tenants.names,
       tenantEmails: CONFIG.tenants.emails,
     })
     await pushGmailDraft('quittance', label, savedPath)
   } finally {
+    if (DEBUG) {
+      console.log('  🔍 Mode debug – navigateur laissé ouvert. Appuie sur Ctrl+C pour quitter.')
+      await new Promise(() => {})
+    }
     await browser.close()
   }
 }

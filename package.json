@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "avis": "npx tsx src/index.ts avis",
+    "avis:debug": "DEBUG=1 npx tsx src/index.ts avis",
     "quittance": "npx tsx src/index.ts quittance",
+    "quittance:debug": "DEBUG=1 npx tsx src/index.ts quittance",
     "auth:gmail": "npx tsx src/auth-gmail.ts"
   },
   "dependencies": {
