@@ -24,7 +24,6 @@ jobs:
           RENTILA_EMAIL: ${{ secrets.RENTILA_EMAIL || '' }}
           RENTILA_PASSWORD: ${{ secrets.RENTILA_PASSWORD || '' }}
           TENANT_EMAILS: ${{ secrets.TENANT_EMAILS || 'test@example.com' }}
-          TENANT_NAMES: ${{ secrets.TENANT_NAMES || '' }}
           GMAIL_CLIENT_ID: ${{ secrets.GMAIL_CLIENT_ID || '' }}
           GMAIL_CLIENT_SECRET: ${{ secrets.GMAIL_CLIENT_SECRET || '' }}
           GMAIL_REFRESH_TOKEN: ${{ secrets.GMAIL_REFRESH_TOKEN || '' }}
