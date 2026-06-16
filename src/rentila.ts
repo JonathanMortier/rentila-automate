@@ -198,11 +198,28 @@ async function handleGmailVerificationCode(page: Page, screenshotDir?: string): 
   const code = await getVerificationCode()
   console.log(`  Code trouvé : ${code}`)
 
-  const input = page.locator('input[type="text"]').first()
+  const inputs = page.locator('input[type="text"], input[type="number"]')
+  const inputCount = await inputs.count()
+  console.log(`  Inputs texte trouvés : ${inputCount}`)
+  await page.screenshot({ path: path.join(debugDir, 'before-fill-code.png'), fullPage: true })
+
+  const input = inputs.first()
   await input.waitFor({ state: 'visible', timeout: 10000 })
   await input.fill(code)
+  console.log(`  Code saisi dans l'input`)
+  await page.screenshot({ path: path.join(debugDir, 'after-fill-code.png'), fullPage: true })
 
-  await page.locator('button[type="submit"], input[type="submit"]').first().click()
+  const submitBtns = page.locator('button[type="submit"], input[type="submit"], button:has-text("Valider"), button:has-text("Confirmer")')
+  const submitCount = await submitBtns.count()
+  console.log(`  Boutons submit trouvés : ${submitCount}`)
+  for (let i = 0; i < submitCount; i++) {
+    console.log(`    [${i}] "${await submitBtns.nth(i).textContent().catch(() => '?')}"`)
+  }
+
+  await submitBtns.first().click()
+  console.log('  ✓ Clic sur submit')
+  await page.screenshot({ path: path.join(debugDir, 'after-submit-code.png'), fullPage: true })
+
   await page.waitForURL('**/landlord/**', { timeout: 20000 })
   console.log('  ✓ Vérification email réussie')
 }
