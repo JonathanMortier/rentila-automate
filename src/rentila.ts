@@ -130,19 +130,18 @@ async function login(page: Page, screenshotDir?: string): Promise<void> {
   console.log('→ Connexion à Rentila ...')
   await page.goto('https://www.rentila.com/', { waitUntil: 'networkidle' })
   await screenshot(page, '01-home')
-  console.log('→ Clique sur Connexion ...')
+
   const connexionBtn = page.getByRole('link', { name: /connexion|se connecter/i })
   if (await connexionBtn.first().isVisible()) {
     await connexionBtn.first().click()
     await page.waitForTimeout(2000)
   }
-  console.log('→ Rempli les identifiants ...')
+
   await screenshot(page, '02-login-form')
   await page.locator('#login-email').first().waitFor({ state: 'visible', timeout: 15000 })
   await page.locator('#login-email').first().fill(CONFIG.rentila.email)
   await page.locator('#login-password').first().fill(CONFIG.rentila.password)
 
-  // Submit form directly via JS (bypasses reCAPTCHA click handler)
   await page.evaluate(() => {
     const form = document.querySelector<HTMLFormElement>('#login-form')
     if (form) form.submit()
@@ -172,9 +171,7 @@ async function login(page: Page, screenshotDir?: string): Promise<void> {
   }
 
   await page.waitForTimeout(1000)
-  console.log(`  URL après login : ${page.url()}`)
-  await screenshot(page, '03-after-login')
-  console.log('✓ Connecté')
+  console.log(`✓ Connecté (${page.url()})`)
 }
 
 async function handleGmailVerificationCode(page: Page, screenshotDir?: string): Promise<void> {
@@ -182,42 +179,22 @@ async function handleGmailVerificationCode(page: Page, screenshotDir?: string): 
 
   const debugDir = screenshotDir ?? DOWNLOADS
   await page.screenshot({ path: path.join(debugDir, 'verification-page.png'), fullPage: true })
-  console.log('  Page HTML :', await page.locator('html').innerText().then(t => t.slice(0, 300)).catch(() => '?'))
-  console.log('  Titre :', await page.title().catch(() => '?'))
 
-  const envoyerBtn = page.getByRole('button').or(page.locator('a')).filter({ hasText: /envoyer|recevoir|code|valider|continuer/i }).first()
+  const envoyerBtn = page.getByRole('button').or(page.locator('a')).filter({ hasText: /envoyer|recevoir|code/i }).first()
   if (await envoyerBtn.isVisible().catch(() => false)) {
-    console.log(`  Bouton trouvé : "${await envoyerBtn.textContent()}"`)
     await envoyerBtn.click()
     console.log('  ✓ Email de vérification demandé')
-  } else {
-    console.log('  ⚠ Aucun bouton "Envoyer" trouvé')
   }
   await page.screenshot({ path: path.join(debugDir, 'after-click-envoyer.png'), fullPage: true })
 
   const code = await getVerificationCode()
-  console.log(`  Code trouvé : ${code}`)
 
-  const inputs = page.locator('input[type="text"], input[type="number"]')
-  const inputCount = await inputs.count()
-  console.log(`  Inputs texte trouvés : ${inputCount}`)
-  await page.screenshot({ path: path.join(debugDir, 'before-fill-code.png'), fullPage: true })
-
-  const input = inputs.first()
+  const input = page.locator('input[type="text"], input[type="number"]').first()
   await input.waitFor({ state: 'visible', timeout: 10000 })
   await input.fill(code)
-  console.log(`  Code saisi dans l'input`)
   await page.screenshot({ path: path.join(debugDir, 'after-fill-code.png'), fullPage: true })
 
-  const submitBtns = page.locator('button[type="submit"], input[type="submit"], button:has-text("Valider"), button:has-text("Confirmer")')
-  const submitCount = await submitBtns.count()
-  console.log(`  Boutons submit trouvés : ${submitCount}`)
-  for (let i = 0; i < submitCount; i++) {
-    console.log(`    [${i}] "${await submitBtns.nth(i).textContent().catch(() => '?')}"`)
-  }
-
-  await submitBtns.first().click()
-  console.log('  ✓ Clic sur submit')
+  await page.locator('button[type="submit"], input[type="submit"]').first().click()
   await page.screenshot({ path: path.join(debugDir, 'after-submit-code.png'), fullPage: true })
 
   await page.waitForURL('**/landlord/**', { timeout: 20000 })
@@ -227,9 +204,6 @@ async function handleGmailVerificationCode(page: Page, screenshotDir?: string): 
 async function getCurrentPaymentId(page: Page): Promise<string> {
   console.log('→ Navigation vers la page des paiements...')
   await page.goto('https://www.rentila.com/landlord/#payments', { waitUntil: 'networkidle' })
-  console.log(`  URL : ${page.url()}`)
-
-  // Wait for any row with an id to appear
   await page.waitForFunction(() => {
     const row = document.querySelector('tr[id^="tr_"]')
     return row && row.id.length > 0
