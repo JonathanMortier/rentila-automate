@@ -178,7 +178,13 @@ async function login(page: Page, screenshotDir?: string): Promise<void> {
 }
 
 async function handleGmailVerificationCode(page: Page): Promise<void> {
-  console.log('→ Mode vérification Gmail activé, récupération du code...')
+  console.log('→ Mode vérification Gmail activé')
+  const envoyerBtn = page.locator('button:has-text("Envoyer"), button:has-text("Recevoir"), button:has-text("Code")')
+  if (await envoyerBtn.isVisible().catch(() => false)) {
+    await envoyerBtn.click()
+    console.log('  ✓ Email de vérification demandé')
+  }
+
   const code = await getVerificationCode()
   console.log(`  Code trouvé : ${code}`)
 
@@ -186,9 +192,7 @@ async function handleGmailVerificationCode(page: Page): Promise<void> {
   await input.waitFor({ state: 'visible', timeout: 10000 })
   await input.fill(code)
 
-  const submitBtn = page.locator('button[type="submit"], input[type="submit"]').first()
-  await submitBtn.click()
-
+  await page.locator('button[type="submit"], input[type="submit"]').first().click()
   await page.waitForURL('**/landlord/**', { timeout: 20000 })
   console.log('  ✓ Vérification email réussie')
 }
