@@ -67,8 +67,8 @@ export async function getVerificationCode(): Promise<string> {
   for (let i = 0; i < maxRetries; i++) {
     const res = await gmail.users.messages.list({
       userId: 'me',
-      q: 'from:rentila subject:(vérification OR code) is:unread',
-      maxResults: 1,
+      q: `from:rentila is:unread`,
+      maxResults: 5,
     })
 
     const messageId = res.data.messages?.[0]?.id

@@ -161,7 +161,7 @@ async function login(page: Page, screenshotDir?: string): Promise<void> {
     console.log(`  Redirigé vers : ${page.url()}`)
 
     if (CONFIG.rentila.verificationMode === 'gmail') {
-      await handleGmailVerificationCode(page)
+      await handleGmailVerificationCode(page, screenshotDir)
     } else {
       await page.screenshot({ path: path.join(screenshotDir ?? DOWNLOADS, 'error-login.png'), fullPage: true })
       throw new Error(
@@ -177,13 +177,23 @@ async function login(page: Page, screenshotDir?: string): Promise<void> {
   console.log('✓ Connecté')
 }
 
-async function handleGmailVerificationCode(page: Page): Promise<void> {
+async function handleGmailVerificationCode(page: Page, screenshotDir?: string): Promise<void> {
   console.log('→ Mode vérification Gmail activé')
-  const envoyerBtn = page.locator('button:has-text("Envoyer"), button:has-text("Recevoir"), button:has-text("Code")')
+
+  const debugDir = screenshotDir ?? DOWNLOADS
+  await page.screenshot({ path: path.join(debugDir, 'verification-page.png'), fullPage: true })
+  console.log('  Page HTML :', await page.locator('html').innerText().then(t => t.slice(0, 300)).catch(() => '?'))
+  console.log('  Titre :', await page.title().catch(() => '?'))
+
+  const envoyerBtn = page.getByRole('button').or(page.locator('a')).filter({ hasText: /envoyer|recevoir|code|valider|continuer/i }).first()
   if (await envoyerBtn.isVisible().catch(() => false)) {
+    console.log(`  Bouton trouvé : "${await envoyerBtn.textContent()}"`)
     await envoyerBtn.click()
     console.log('  ✓ Email de vérification demandé')
+  } else {
+    console.log('  ⚠ Aucun bouton "Envoyer" trouvé')
   }
+  await page.screenshot({ path: path.join(debugDir, 'after-click-envoyer.png'), fullPage: true })
 
   const code = await getVerificationCode()
   console.log(`  Code trouvé : ${code}`)
