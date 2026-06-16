@@ -61,13 +61,17 @@ export async function getVerificationCode(): Promise<string> {
 
   const auth = await authorize()
   const gmail = google.gmail({ version: 'v1', auth })
-  const maxRetries = 8
-  const delayMs = 5000
+  const maxRetries = 12
+  const delayMs = 6000
+
+  // Wait a bit for the email to arrive before first search
+  console.log('  Attente de la réception de l\'email...')
+  await new Promise(r => setTimeout(r, 15000))
 
   for (let i = 0; i < maxRetries; i++) {
     const res = await gmail.users.messages.list({
       userId: 'me',
-      q: `from:rentila is:unread`,
+      q: `from:noreply@rentila.com`,
       maxResults: 5,
     })
 
