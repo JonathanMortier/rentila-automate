@@ -1,4 +1,4 @@
-import { chromium, type Page } from 'playwright'
+import { chromium, type Browser, type Page } from 'playwright'
 import path from 'node:path'
 import fs from 'node:fs'
 import { CONFIG, monthLabel } from './config.js'
@@ -28,13 +28,7 @@ export async function downloadAvis(): Promise<void> {
 
   if (DRY_RUN) return dryRun('avis', label, pdfPath)
 
-  const browser = await chromium.launch({
-    headless: !DEBUG,
-    slowMo: DEBUG ? 300 : undefined,
-    args: ['--no-sandbox'],
-  })
-  const page = await browser.newPage()
-  await page.setViewportSize({ width: 1280, height: 900 })
+  const { browser, page } = await launchBrowser()
 
   try {
     await login(page, folder)
@@ -64,13 +58,7 @@ export async function markPaidAndDownloadQuittance(): Promise<void> {
 
   if (DRY_RUN) return dryRun('quittance', label, pdfPath)
 
-  const browser = await chromium.launch({
-    headless: !DEBUG,
-    slowMo: DEBUG ? 300 : undefined,
-    args: ['--no-sandbox'],
-  })
-  const page = await browser.newPage()
-  await page.setViewportSize({ width: 1280, height: 900 })
+  const { browser, page } = await launchBrowser()
 
   try {
     await login(page, folder)
@@ -118,6 +106,24 @@ async function pushGmailDraft(type: 'avis' | 'quittance', month: string, pdfPath
     body,
     pdfPath,
   })
+}
+
+async function launchBrowser(): Promise<{ browser: Browser; page: Page }> {
+  const browser = await chromium.launch({
+    headless: !DEBUG,
+    slowMo: DEBUG ? 300 : undefined,
+    args: ['--no-sandbox', '--disable-blink-features=AutomationControlled'],
+  })
+  const context = await browser.newContext({
+    userAgent:
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+  })
+  const page = await context.newPage()
+  await page.setViewportSize({ width: 1280, height: 900 })
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'webdriver', { get: () => false })
+  })
+  return { browser, page }
 }
 
 async function login(page: Page, screenshotDir?: string): Promise<void> {
