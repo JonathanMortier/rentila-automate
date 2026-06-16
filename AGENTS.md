@@ -8,16 +8,17 @@ Automatiser le téléchargement des avis d'échéance et quittances de loyer dep
 ```
 rentila-automate/
 ├── src/
-│   ├── index.ts          # CLI : dispatche vers avis | quittance
-│   ├── rentila.ts        # Playwright : login, navigation, téléchargement
-│   ├── mailer.ts         # Brouillon email local (.txt)
-│   ├── gmail.ts          # Brouillon Gmail via API OAuth2
-│   ├── auth-gmail.ts     # Script one-shot pour obtenir le refresh token
-│   └── config.ts         # Variables d'environnement + mois français
+│   ├── index.ts              # CLI : dispatche vers avis | quittance
+│   ├── rentila.ts            # Playwright : login, navigation, téléchargement
+│   ├── mailer.ts             # Brouillon email local (.txt)
+│   ├── gmail.ts              # Brouillon Gmail + récupération code vérification
+│   ├── auth-gmail.ts         # Script one-shot pour obtenir le refresh token
+│   ├── test-gmail-scope.ts   # Test des scopes Gmail API
+│   └── config.ts             # Variables d'environnement + mois français
 ├── .github/workflows/
-│   ├── avis-echeance.yml # Cron 1er du mois + déclenchement manuel
-│   └── quittance.yml     # Déclenchement manuel uniquement
-└── .env                  # Secrets locaux (gitignoré)
+│   ├── avis-echeance.yml     # Cron 1er du mois + déclenchement manuel
+│   └── quittance.yml         # Déclenchement manuel uniquement
+└── .env                      # Secrets locaux (gitignoré)
 ```
 
 ## Flux
@@ -46,6 +47,21 @@ rentila-automate/
 - Contournement : `form.submit()` en JS direct (pas de clic sur le bouton)
 - Redirection attendue : `**/landlord/**`
 
+### Anti-détection (dans `launchBrowser()`)
+- `args: ['--no-sandbox', '--disable-blink-features=AutomationControlled']`
+- User Agent Windows Chrome réaliste
+- `addInitScript(() => Object.defineProperty(navigator, 'webdriver', { get: () => false }))`
+
+### Vérification email (RENTILA_VERIFICATION_MODE=gmail)
+Quand GitHub Actions headless est détecté, Rentila redirige vers une page de vérification avec code envoyé par email. La fonction `handleGmailVerificationCode()` :
+1. Clique sur "Envoyer" pour déclencher l'email
+2. Appelle `getVerificationCode()` (via Gmail API, search `from:noreply@rentila.com subject:"Code de vérification" after:YYYY/MM/DD`)
+3. Extrait le code à 6 chiffres du corps HTML de l'email (via `extractEmailBody()` qui parcourt les parties MIME récursivement)
+4. Remplit l'input et submit
+5. Attend `/landlord/**`
+
+Délais : 15s initial + 12 tentatives × 6s = ~87s max.
+
 ## Navigation SPA
 
 - `/#payments` utilise le hash routing (AngularJS)
@@ -64,7 +80,7 @@ Requête via `page.context().request.get(url)` (utilise la session Playwright).
 ## Brouillon Gmail
 
 - API : Gmail API (`googleapis`)
-- Scope : `https://www.googleapis.com/auth/gmail.compose`
+- Scopes : `gmail.compose` + `gmail.readonly` (pour lire les codes de vérification)
 - Méthode : `users.drafts.create` avec message MIME multipart/mixed encodé en base64url
 - Auth : Refresh token stocké dans `.env` (obtenu via `npm run auth:gmail`)
 - Redirect URI : `http://localhost:8080/oauth2callback` (configuré dans Google Cloud Console)
@@ -74,11 +90,13 @@ Requête via `page.context().request.get(url)` (utilise la session Playwright).
 
 | Commande | DRY_RUN | DEBUG | Comportement |
 |---|---|---|---|
-| `npm run avis` | non | non | Headless + vrai Rentila |
-| `npm run avis:debug` | non | oui | Navigateur visible + slowMo 300ms + reste ouvert après exécution |
-| `DRY_RUN=true npm run avis` | oui | non | Fake PDF + brouillons uniquement (test Gmail) |
+| `npm run avis` | `false` | `false` | Headless + vrai Rentila |
+| `npm run avis:debug` | `false` | `true` | Navigateur visible + slowMo 300ms + reste ouvert |
+| `DRY_RUN=true npm run avis` | `true` | `false` | Fake PDF + brouillons uniquement |
 
 Même chose pour `quittance` / `quittance:debug`.
+
+Note : `DRY_RUN` est interprété comme `process.env.DRY_RUN === 'true'` — une valeur `"false"` (string) n'active PAS le dry run.
 
 ## Variables d'environnement
 
@@ -87,7 +105,7 @@ Même chose pour `quittance` / `quittance:debug`.
 | `RENTILA_EMAIL` | Oui | Email de connexion Rentila |
 | `RENTILA_PASSWORD` | Oui | Mot de passe Rentila |
 | `TENANT_EMAILS` | Oui | Emails des locataires (séparés par des virgules) |
-| `TENANT_NAMES` | Oui | Noms des locataires |
+| `RENTILA_VERIFICATION_MODE` | Non | `gmail` pour auto-récupération du code de vérification |
 | `GMAIL_CLIENT_ID` | Non | Client ID OAuth2 Google |
 | `GMAIL_CLIENT_SECRET` | Non | Client Secret OAuth2 Google |
 | `GMAIL_REFRESH_TOKEN` | Non | Refresh token (obtenu via `npm run auth:gmail`) |
@@ -97,26 +115,36 @@ Même chose pour `quittance` / `quittance:debug`.
 ## GitHub Actions
 
 ### Secrets à configurer
-`RENTILA_EMAIL`, `RENTILA_PASSWORD`, `TENANT_EMAILS`, `TENANT_NAMES`, `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `GMAIL_REFRESH_TOKEN`.
+`RENTILA_EMAIL`, `RENTILA_PASSWORD`, `TENANT_EMAILS`, `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `GMAIL_REFRESH_TOKEN`, `RENTILA_VERIFICATION_MODE`.
 
-### Passage en prod
-- Retirer `DRY_RUN: true` des fichiers `.github/workflows/*.yml`
-- Les workflows doivent être sur la branche par défaut (`main`)
+### État DRY_RUN
+- `avis-echeance.yml` : `DRY_RUN: false` (production)
+- `quittance.yml` : `DRY_RUN: true` (à passer à `false` pour la prod)
+
+### Scripts utiles
+```bash
+npm run test:gmail      # Vérifie les scopes Gmail + cherche le dernier code Rentila
+npm run auth:gmail      # Obtient/renouvelle le refresh token
+```
 
 ## Ce qui est testé ✓
-- Login Rentila (debug)
-- Navigation `/#payments` (debug)
-- Téléchargement avis PDF
-- Brouillon Gmail
-- Dry run (Rentila + Gmail)
-
-## Ce qui reste à faire
-- Fonction quittance complète (select payé + download)
-- Tester quittance en debug
-- Retirer `DRY_RUN: true` des workflows GitHub
-- Notifications en cas d'échec (optionnel)
+- Login Rentila avec gestion reCAPTCHA
+- Anti-détection headless (User-Agent, webdriver, --disable-blink-features)
+- Navigation `/#payments` et extraction ID
+- Téléchargement PDF avis et quittance
+- Brouillon local (.txt)
+- Brouillon Gmail (compose)
+- Dry run complet
+- Récupération automatique du code de vérification via Gmail API (readonly)
+- Marquage "Payé" via selectbox
 
 ## Pièges connus
-- `g-recaptcha` : ne pas cliquer sur le bouton avec Playwright (`click()` ne déclenche pas reCAPTCHA correctement). Utiliser `form.submit()` en JS.
+- `g-recaptcha` : ne pas cliquer sur le bouton avec Playwright (`click()` échoue). Utiliser `form.submit()` en JS.
+- `--no-sandbox` obligatoire dans GitHub Actions (conteneur).
+- `--disable-blink-features=AutomationControlled` + userAgent réaliste + `addInitScript` nécessaires pour éviter la détection headless.
 - SPA hash routing : `waitUntil: 'networkidle'` se déclenche avant le chargement des données. Utiliser `waitForFunction` à la place.
-- L'URL du navigateur après login peut être `https://www.rentila.com/register/login` si reCAPTCHA bloque. Attendre `waitForURL('**/landlord/**')`.
+- L'URL après login peut être `/register/confirm` (vérification email) au lieu de `/landlord/**`. Déclencher `RENTILA_VERIFICATION_MODE=gmail`.
+- L'email de vérification Rentila est en **HTML uniquement** (`text/plain` vide). Ne pas chercher le code dans le text/plain. Utiliser `extractEmailBody()` qui tombe sur le HTML en fallback.
+- La recherche Gmail `is:unread` peut rater si l'email arrive avec du retard. Utiliser `after:YYYY/MM/DD` et `from:noreply@rentila.com` sans `is:unread`.
+- `DRY_RUN: false` en string dans un workflow ne doit PAS être évalué comme truthy. Utiliser `=== 'true'`.
+- Le port 8080 est utilisé par le callback OAuth — ne pas le bloquer.
