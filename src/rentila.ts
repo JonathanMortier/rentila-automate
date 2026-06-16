@@ -31,12 +31,13 @@ export async function downloadAvis(): Promise<void> {
   const browser = await chromium.launch({
     headless: !DEBUG,
     slowMo: DEBUG ? 300 : undefined,
+    args: ['--no-sandbox'],
   })
   const page = await browser.newPage()
   await page.setViewportSize({ width: 1280, height: 900 })
 
   try {
-    await login(page)
+    await login(page, folder)
     const paymentId = await getCurrentPaymentId(page)
     const savedPath = await downloadDirect(page, paymentId, pdfPath, true)
 
@@ -66,12 +67,13 @@ export async function markPaidAndDownloadQuittance(): Promise<void> {
   const browser = await chromium.launch({
     headless: !DEBUG,
     slowMo: DEBUG ? 300 : undefined,
+    args: ['--no-sandbox'],
   })
   const page = await browser.newPage()
   await page.setViewportSize({ width: 1280, height: 900 })
 
   try {
-    await login(page)
+    await login(page, folder)
     const paymentId = await getCurrentPaymentId(page)
 
     // Changer le statut de "Pas payé" à "Payé" via la selectbox
@@ -118,7 +120,7 @@ async function pushGmailDraft(type: 'avis' | 'quittance', month: string, pdfPath
   })
 }
 
-async function login(page: Page): Promise<void> {
+async function login(page: Page, screenshotDir?: string): Promise<void> {
   console.log('→ Connexion à Rentila ...')
   await page.goto('https://www.rentila.com/', { waitUntil: 'networkidle' })
   await screenshot(page, '01-home')
@@ -141,7 +143,14 @@ async function login(page: Page): Promise<void> {
   })
   console.log('→ Attente de la page landlord ...')
   // Wait for redirect to landlord dashboard
-  await page.waitForURL('**/landlord/**', { timeout: 20000 })
+  try {
+    await page.waitForURL('**/landlord/**', { timeout: 20000 })
+  } catch {
+    await page.screenshot({ path: path.join(screenshotDir ?? DOWNLOADS, 'error-login.png'), fullPage: true })
+    console.error(`  URL après login : ${page.url()}`)
+    console.error(`  Screenshot sauvegardé : error-login.png`)
+    throw new Error(`Login échoué : redirigé vers ${page.url()}`)
+  }
   await page.waitForTimeout(1000)
   console.log(`  URL après login : ${page.url()}`)
   await screenshot(page, '03-after-login')
