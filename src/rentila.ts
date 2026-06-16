@@ -119,16 +119,16 @@ async function pushGmailDraft(type: 'avis' | 'quittance', month: string, pdfPath
 }
 
 async function login(page: Page): Promise<void> {
-  console.log('→ Connexion à Rentila...')
+  console.log('→ Connexion à Rentila ...')
   await page.goto('https://www.rentila.com/', { waitUntil: 'networkidle' })
   await screenshot(page, '01-home')
-
+  console.log('→ Clique sur Connexion ...')
   const connexionBtn = page.getByRole('link', { name: /connexion|se connecter/i })
   if (await connexionBtn.first().isVisible()) {
     await connexionBtn.first().click()
     await page.waitForTimeout(2000)
   }
-
+  console.log('→ Rempli les identifiants ...')
   await screenshot(page, '02-login-form')
   await page.locator('#login-email').first().waitFor({ state: 'visible', timeout: 15000 })
   await page.locator('#login-email').first().fill(CONFIG.rentila.email)
@@ -139,7 +139,7 @@ async function login(page: Page): Promise<void> {
     const form = document.querySelector<HTMLFormElement>('#login-form')
     if (form) form.submit()
   })
-
+  console.log('→ Attente de la page landlord ...')
   // Wait for redirect to landlord dashboard
   await page.waitForURL('**/landlord/**', { timeout: 20000 })
   await page.waitForTimeout(1000)
