@@ -8,7 +8,8 @@
     "avis:debug": "DEBUG=1 npx tsx src/index.ts avis",
     "quittance": "npx tsx src/index.ts quittance",
     "quittance:debug": "DEBUG=1 npx tsx src/index.ts quittance",
-    "auth:gmail": "npx tsx src/auth-gmail.ts"
+    "auth:gmail": "npx tsx src/auth-gmail.ts",
+    "test:gmail": "npx tsx src/test-gmail-scope.ts"
   },
   "dependencies": {
     "dotenv": "^16.4.7",
