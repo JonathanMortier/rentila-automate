@@ -7,6 +7,7 @@ import { createGmailDraft } from './gmail.js'
 
 const DOWNLOADS = path.resolve('downloads')
 const DEBUG = !!process.env.DEBUG
+const DRY_RUN = process.env.DRY_RUN === 'true'
 
 async function dryRun(type: 'avis' | 'quittance', label: string, pdfPath: string): Promise<void> {
   console.log(`→ DRY RUN : pas de connexion Rentila`)
@@ -25,7 +26,7 @@ export async function downloadAvis(): Promise<void> {
   const folder = ensureDir(label)
   const pdfPath = path.join(folder, `avis-echeance-${sanitize(label)}.pdf`)
 
-  if (process.env.DRY_RUN) return dryRun('avis', label, pdfPath)
+  if (DRY_RUN) return dryRun('avis', label, pdfPath)
 
   const browser = await chromium.launch({
     headless: !DEBUG,
@@ -60,7 +61,7 @@ export async function markPaidAndDownloadQuittance(): Promise<void> {
   const folder = ensureDir(label)
   const pdfPath = path.join(folder, `quittance-${sanitize(label)}.pdf`)
 
-  if (process.env.DRY_RUN) return dryRun('quittance', label, pdfPath)
+  if (DRY_RUN) return dryRun('quittance', label, pdfPath)
 
   const browser = await chromium.launch({
     headless: !DEBUG,
