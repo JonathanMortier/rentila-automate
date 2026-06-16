@@ -47,6 +47,40 @@ async function main() {
     console.log('   Relance : npm run auth:gmail')
     process.exit(1)
   }
+
+  // Test 3 : chercher le code de vérification Rentila
+  try {
+    const testRes = await gmail.users.messages.list({
+      userId: 'me',
+      q: 'from:noreply@rentila.com subject:"Code de vérification"',
+      maxResults: 1,
+    })
+    if (testRes.data.messages?.length) {
+      const msg = await gmail.users.messages.get({ userId: 'me', id: testRes.data.messages[0].id, format: 'full' })
+      let body = ''
+      if (msg.data.payload?.body?.data) {
+        body = Buffer.from(msg.data.payload.body.data, 'base64').toString('utf-8')
+      }
+      const parts = msg.data.payload?.parts ?? []
+      for (const part of parts) {
+        if (part.mimeType === 'text/plain' && part.body?.data) {
+          body = Buffer.from(part.body.data, 'base64').toString('utf-8')
+          break
+        }
+        if (part.mimeType === 'text/html' && part.body?.data && !body) {
+          body = Buffer.from(part.body.data, 'base64').toString('utf-8')
+        }
+      }
+      const stripped = body.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ')
+      const code = stripped.match(/\b(\d{6})\b/)
+      console.log(`📧 Dernier email Rentila trouvé`)
+      console.log(`   Code : ${code ? code[1] : 'non trouvé'}`)
+    } else {
+      console.log('📧 Aucun email Rentila en attente')
+    }
+  } catch {
+    console.log('⚠ Impossible de chercher les emails Rentila')
+  }
 }
 
 main().catch(err => {

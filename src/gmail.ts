@@ -54,6 +54,36 @@ export async function createGmailDraft(params: {
   console.log(`✓ Brouillon Gmail créé : https://mail.google.com/mail/u/0/#drafts/${draftId}`)
 }
 
+function extractEmailBody(payload: any): string {
+  if (!payload) return ''
+
+  if (payload.body?.data) {
+    const decoded = Buffer.from(payload.body.data, 'base64').toString('utf-8')
+    if (decoded.trim()) return decoded
+  }
+
+  const parts = payload.parts ?? []
+  let htmlBody = ''
+  for (const part of parts) {
+    if (part.mimeType === 'text/plain' && part.body?.data) {
+      const decoded = Buffer.from(part.body.data, 'base64').toString('utf-8')
+      if (decoded.trim()) return decoded
+    }
+    if (part.mimeType === 'text/html' && part.body?.data) {
+      htmlBody = Buffer.from(part.body.data, 'base64').toString('utf-8')
+    }
+    const nested = extractEmailBody(part)
+    if (nested) return nested
+  }
+
+  if (htmlBody) {
+    const stripped = htmlBody.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim()
+    if (stripped) return stripped
+  }
+
+  return ''
+}
+
 export async function getVerificationCode(): Promise<string> {
   if (!CONFIG.gmail.clientId || !CONFIG.gmail.clientSecret || !CONFIG.gmail.refreshToken) {
     throw new Error('Gmail non configuré (GMAIL_CLIENT_ID / CLIENT_SECRET / REFRESH_TOKEN requis)')
@@ -83,18 +113,7 @@ export async function getVerificationCode(): Promise<string> {
         format: 'full',
       })
 
-      const parts = msg.data.payload?.parts ?? []
-      let body = ''
-      for (const part of parts) {
-        if (part.mimeType === 'text/plain' && part.body?.data) {
-          body = Buffer.from(part.body.data, 'base64').toString('utf-8')
-          break
-        }
-      }
-      if (!body && msg.data.payload?.body?.data) {
-        body = Buffer.from(msg.data.payload.body.data, 'base64').toString('utf-8')
-      }
-
+      const body = extractEmailBody(msg.data.payload)
       const match = body.match(/\b(\d{6})\b/)
       if (match) return match[1]
     }
