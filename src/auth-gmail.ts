@@ -3,7 +3,10 @@ import { randomBytes } from 'node:crypto'
 import { google } from 'googleapis'
 import { CONFIG } from './config.js'
 
-const SCOPES = ['https://www.googleapis.com/auth/gmail.compose']
+const SCOPES = [
+  'https://www.googleapis.com/auth/gmail.compose',
+  'https://www.googleapis.com/auth/gmail.readonly',
+]
 const PORT = 8080
 
 async function main() {

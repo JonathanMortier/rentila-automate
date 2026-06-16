@@ -4,6 +4,7 @@ export const CONFIG = {
   rentila: {
     email: env('RENTILA_EMAIL'),
     password: env('RENTILA_PASSWORD'),
+    verificationMode: env('RENTILA_VERIFICATION_MODE'),
   },
   tenants: {
     emails: env('TENANT_EMAILS').split(',').map(s => s.trim()).filter(Boolean),

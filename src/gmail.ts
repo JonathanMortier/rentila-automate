@@ -54,6 +54,56 @@ export async function createGmailDraft(params: {
   console.log(`✓ Brouillon Gmail créé : https://mail.google.com/mail/u/0/#drafts/${draftId}`)
 }
 
+export async function getVerificationCode(): Promise<string> {
+  if (!CONFIG.gmail.clientId || !CONFIG.gmail.clientSecret || !CONFIG.gmail.refreshToken) {
+    throw new Error('Gmail non configuré (GMAIL_CLIENT_ID / CLIENT_SECRET / REFRESH_TOKEN requis)')
+  }
+
+  const auth = await authorize()
+  const gmail = google.gmail({ version: 'v1', auth })
+  const maxRetries = 8
+  const delayMs = 5000
+
+  for (let i = 0; i < maxRetries; i++) {
+    const res = await gmail.users.messages.list({
+      userId: 'me',
+      q: 'from:rentila subject:(vérification OR code) is:unread',
+      maxResults: 1,
+    })
+
+    const messageId = res.data.messages?.[0]?.id
+    if (messageId) {
+      const msg = await gmail.users.messages.get({
+        userId: 'me',
+        id: messageId,
+        format: 'full',
+      })
+
+      const parts = msg.data.payload?.parts ?? []
+      let body = ''
+      for (const part of parts) {
+        if (part.mimeType === 'text/plain' && part.body?.data) {
+          body = Buffer.from(part.body.data, 'base64').toString('utf-8')
+          break
+        }
+      }
+      if (!body && msg.data.payload?.body?.data) {
+        body = Buffer.from(msg.data.payload.body.data, 'base64').toString('utf-8')
+      }
+
+      const match = body.match(/\b(\d{6})\b/)
+      if (match) return match[1]
+    }
+
+    if (i < maxRetries - 1) {
+      console.log(`  En attente du code de vérification... (${i + 1}/${maxRetries})`)
+      await new Promise(r => setTimeout(r, delayMs))
+    }
+  }
+
+  throw new Error('Code de vérification introuvable dans les emails Rentila')
+}
+
 export async function getAuthUrl(): Promise<string> {
   const oauth2Client = new google.auth.OAuth2({
     clientId: CONFIG.gmail.clientId,

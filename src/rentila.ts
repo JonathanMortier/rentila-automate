@@ -3,7 +3,7 @@ import path from 'node:path'
 import fs from 'node:fs'
 import { CONFIG, monthLabel } from './config.js'
 import { createDraft } from './mailer.js'
-import { createGmailDraft } from './gmail.js'
+import { createGmailDraft, getVerificationCode } from './gmail.js'
 
 const DOWNLOADS = path.resolve('downloads')
 const DEBUG = !!process.env.DEBUG
@@ -148,19 +148,49 @@ async function login(page: Page, screenshotDir?: string): Promise<void> {
     if (form) form.submit()
   })
   console.log('→ Attente de la page landlord ...')
-  // Wait for redirect to landlord dashboard
+
+  let onLandlord = false
   try {
-    await page.waitForURL('**/landlord/**', { timeout: 20000 })
+    await page.waitForURL('**/landlord/**', { timeout: 15000 })
+    onLandlord = true
   } catch {
-    await page.screenshot({ path: path.join(screenshotDir ?? DOWNLOADS, 'error-login.png'), fullPage: true })
-    console.error(`  URL après login : ${page.url()}`)
-    console.error(`  Screenshot sauvegardé : error-login.png`)
-    throw new Error(`Login échoué : redirigé vers ${page.url()}`)
+    // Not on landlord — might be verification page
   }
+
+  if (!onLandlord) {
+    console.log(`  Redirigé vers : ${page.url()}`)
+
+    if (CONFIG.rentila.verificationMode === 'gmail') {
+      await handleGmailVerificationCode(page)
+    } else {
+      await page.screenshot({ path: path.join(screenshotDir ?? DOWNLOADS, 'error-login.png'), fullPage: true })
+      throw new Error(
+        `Login échoué : redirigé vers ${page.url()}\n` +
+        '  Ajoute RENTILA_VERIFICATION_MODE=gmail dans .env pour la récupération automatique du code.'
+      )
+    }
+  }
+
   await page.waitForTimeout(1000)
   console.log(`  URL après login : ${page.url()}`)
   await screenshot(page, '03-after-login')
   console.log('✓ Connecté')
+}
+
+async function handleGmailVerificationCode(page: Page): Promise<void> {
+  console.log('→ Mode vérification Gmail activé, récupération du code...')
+  const code = await getVerificationCode()
+  console.log(`  Code trouvé : ${code}`)
+
+  const input = page.locator('input[type="text"]').first()
+  await input.waitFor({ state: 'visible', timeout: 10000 })
+  await input.fill(code)
+
+  const submitBtn = page.locator('button[type="submit"], input[type="submit"]').first()
+  await submitBtn.click()
+
+  await page.waitForURL('**/landlord/**', { timeout: 20000 })
+  console.log('  ✓ Vérification email réussie')
 }
 
 async function getCurrentPaymentId(page: Page): Promise<string> {
