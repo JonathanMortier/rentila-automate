@@ -98,10 +98,12 @@ export async function getVerificationCode(): Promise<string> {
   console.log('  Attente de la réception de l\'email...')
   await new Promise(r => setTimeout(r, 15000))
 
+  const today = new Date().toISOString().slice(0, 10).replace(/-/g, '/')
+
   for (let i = 0; i < maxRetries; i++) {
     const res = await gmail.users.messages.list({
       userId: 'me',
-      q: `from:noreply@rentila.com subject:"Code de vérification"`,
+      q: `from:noreply@rentila.com subject:"Code de vérification" after:${today}`,
       maxResults: 5,
     })
 
