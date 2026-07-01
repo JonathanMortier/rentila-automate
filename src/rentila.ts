@@ -1,11 +1,13 @@
-import { chromium, type Page } from 'playwright'
+import { chromium, type Browser, type Page } from 'playwright'
 import path from 'node:path'
 import fs from 'node:fs'
 import { CONFIG, monthLabel } from './config.js'
 import { createDraft } from './mailer.js'
+import { createGmailDraft, getVerificationCode } from './gmail.js'
 
 const DOWNLOADS = path.resolve('downloads')
 const DEBUG = !!process.env.DEBUG
+const DRY_RUN = process.env.DRY_RUN === 'true'
 
 async function dryRun(type: 'avis' | 'quittance', label: string, pdfPath: string): Promise<void> {
   console.log(`→ DRY RUN : pas de connexion Rentila`)
@@ -14,9 +16,9 @@ async function dryRun(type: 'avis' | 'quittance', label: string, pdfPath: string
     type,
     month: label,
     pdfPath,
-    tenantNames: CONFIG.tenants.names,
-    tenantEmails: CONFIG.tenants.emails,
+    tenantEmails: CONFIG.tenants.emails
   })
+  await pushGmailDraft(type, label, pdfPath)
 }
 
 export async function downloadAvis(): Promise<void> {
@@ -24,25 +26,27 @@ export async function downloadAvis(): Promise<void> {
   const folder = ensureDir(label)
   const pdfPath = path.join(folder, `avis-echeance-${sanitize(label)}.pdf`)
 
-  if (process.env.DRY_RUN) return dryRun('avis', label, pdfPath)
+  if (DRY_RUN) return dryRun('avis', label, pdfPath)
 
-  const browser = await chromium.launch({ headless: !DEBUG })
-  const page = await browser.newPage()
-  await page.setViewportSize({ width: 1280, height: 900 })
+  const { browser, page } = await launchBrowser()
 
   try {
-    await login(page)
+    await login(page, folder)
     const paymentId = await getCurrentPaymentId(page)
     const savedPath = await downloadDirect(page, paymentId, pdfPath, true)
 
-    createDraft({
+    await createDraft({
       type: 'avis',
       month: label,
       pdfPath: savedPath,
-      tenantNames: CONFIG.tenants.names,
       tenantEmails: CONFIG.tenants.emails,
     })
+    await pushGmailDraft('avis', label, savedPath)
   } finally {
+    if (DEBUG) {
+      console.log('  🔍 Mode debug – navigateur laissé ouvert. Appuie sur Ctrl+C pour quitter.')
+      await new Promise(() => {})
+    }
     await browser.close()
   }
 }
@@ -52,44 +56,78 @@ export async function markPaidAndDownloadQuittance(): Promise<void> {
   const folder = ensureDir(label)
   const pdfPath = path.join(folder, `quittance-${sanitize(label)}.pdf`)
 
-  if (process.env.DRY_RUN) return dryRun('quittance', label, pdfPath)
+  if (DRY_RUN) return dryRun('quittance', label, pdfPath)
 
-  const browser = await chromium.launch({ headless: !DEBUG })
-  const page = await browser.newPage()
-  await page.setViewportSize({ width: 1280, height: 900 })
+  const { browser, page } = await launchBrowser()
 
   try {
-    await login(page)
+    await login(page, folder)
     const paymentId = await getCurrentPaymentId(page)
 
-    const payUrl = `https://www.rentila.com/landlord/#payments/received?id=${paymentId}`
-    console.log(`→ Enregistrement du paiement...`)
-    await page.goto(payUrl, { waitUntil: 'networkidle' })
+    // Changer le statut de "Pas payé" à "Payé" via la selectbox
+    console.log(`→ Marquage du paiement ${paymentId} comme Payé...`)
+    const select = page.locator(`#changeStatus${paymentId}`)
+    await select.waitFor({ state: 'visible', timeout: 10000 })
+    await select.selectOption('2')
     await page.waitForTimeout(2000)
-
-    const submitBtn = page.locator('button[type="submit"], input[type="submit"]').first()
-    if (await submitBtn.isVisible().catch(() => false)) {
-      await submitBtn.click()
-      await page.waitForTimeout(2000)
-      console.log('✓ Paiement enregistré')
-    }
+    await screenshot(page, '05-paid')
+    console.log('✓ Paiement marqué Payé')
 
     const savedPath = await downloadDirect(page, paymentId, pdfPath, false)
 
-    createDraft({
+    await createDraft({
       type: 'quittance',
       month: label,
       pdfPath: savedPath,
-      tenantNames: CONFIG.tenants.names,
       tenantEmails: CONFIG.tenants.emails,
     })
+    await pushGmailDraft('quittance', label, savedPath)
   } finally {
+    if (DEBUG) {
+      console.log('  🔍 Mode debug – navigateur laissé ouvert. Appuie sur Ctrl+C pour quitter.')
+      await new Promise(() => {})
+    }
     await browser.close()
   }
 }
 
-async function login(page: Page): Promise<void> {
-  console.log('→ Connexion à Rentila...')
+async function pushGmailDraft(type: 'avis' | 'quittance', month: string, pdfPath: string): Promise<void> {
+  const isAvis = type === 'avis'
+  const subject = isAvis
+    ? `Avis d'échéance du mois de ${month}`
+    : `Quittance du mois de ${month}`
+  const body = isAvis
+    ? `Bonjour,\n\nVous trouverez en pièce jointe l'avis d'échéance du mois de ${month}.\n\nCordialement`
+    : `Bonjour,\n\nVous trouverez en pièce jointe la quittance du mois de ${month}.\n\nCordialement`
+
+  await createGmailDraft({
+    to: CONFIG.tenants.emails,
+    subject,
+    body,
+    pdfPath,
+  })
+}
+
+async function launchBrowser(): Promise<{ browser: Browser; page: Page }> {
+  const browser = await chromium.launch({
+    headless: !DEBUG,
+    slowMo: DEBUG ? 300 : undefined,
+    args: ['--no-sandbox', '--disable-blink-features=AutomationControlled'],
+  })
+  const context = await browser.newContext({
+    userAgent:
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+  })
+  const page = await context.newPage()
+  await page.setViewportSize({ width: 1280, height: 900 })
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'webdriver', { get: () => false })
+  })
+  return { browser, page }
+}
+
+async function login(page: Page, screenshotDir?: string): Promise<void> {
+  console.log('→ Connexion à Rentila ...')
   await page.goto('https://www.rentila.com/', { waitUntil: 'networkidle' })
   await screenshot(page, '01-home')
 
@@ -104,26 +142,68 @@ async function login(page: Page): Promise<void> {
   await page.locator('#login-email').first().fill(CONFIG.rentila.email)
   await page.locator('#login-password').first().fill(CONFIG.rentila.password)
 
-  // Submit form directly via JS (bypasses reCAPTCHA click handler)
   await page.evaluate(() => {
     const form = document.querySelector<HTMLFormElement>('#login-form')
     if (form) form.submit()
   })
+  console.log('→ Attente de la page landlord ...')
 
-  // Wait for redirect to landlord dashboard
-  await page.waitForURL('**/landlord/**', { timeout: 20000 })
+  let onLandlord = false
+  try {
+    await page.waitForURL('**/landlord/**', { timeout: 15000 })
+    onLandlord = true
+  } catch {
+    // Not on landlord — might be verification page
+  }
+
+  if (!onLandlord) {
+    console.log(`  Redirigé vers : ${page.url()}`)
+
+    if (CONFIG.rentila.verificationMode === 'gmail') {
+      await handleGmailVerificationCode(page, screenshotDir)
+    } else {
+      await page.screenshot({ path: path.join(screenshotDir ?? DOWNLOADS, 'error-login.png'), fullPage: true })
+      throw new Error(
+        `Login échoué : redirigé vers ${page.url()}\n` +
+        '  Ajoute RENTILA_VERIFICATION_MODE=gmail dans .env pour la récupération automatique du code.'
+      )
+    }
+  }
+
   await page.waitForTimeout(1000)
-  console.log(`  URL après login : ${page.url()}`)
-  await screenshot(page, '03-after-login')
-  console.log('✓ Connecté')
+  console.log(`✓ Connecté (${page.url()})`)
+}
+
+async function handleGmailVerificationCode(page: Page, screenshotDir?: string): Promise<void> {
+  console.log('→ Mode vérification Gmail activé')
+
+  const debugDir = screenshotDir ?? DOWNLOADS
+  await page.screenshot({ path: path.join(debugDir, 'verification-page.png'), fullPage: true })
+
+  const envoyerBtn = page.getByRole('button').or(page.locator('a')).filter({ hasText: /envoyer|recevoir|code/i }).first()
+  if (await envoyerBtn.isVisible().catch(() => false)) {
+    await envoyerBtn.click()
+    console.log('  ✓ Email de vérification demandé')
+  }
+  await page.screenshot({ path: path.join(debugDir, 'after-click-envoyer.png'), fullPage: true })
+
+  const code = await getVerificationCode()
+
+  const input = page.locator('input[type="text"], input[type="number"]').first()
+  await input.waitFor({ state: 'visible', timeout: 10000 })
+  await input.fill(code)
+  await page.screenshot({ path: path.join(debugDir, 'after-fill-code.png'), fullPage: true })
+
+  await page.locator('button[type="submit"], input[type="submit"]').first().click()
+  await page.screenshot({ path: path.join(debugDir, 'after-submit-code.png'), fullPage: true })
+
+  await page.waitForURL('**/landlord/**', { timeout: 20000 })
+  console.log('  ✓ Vérification email réussie')
 }
 
 async function getCurrentPaymentId(page: Page): Promise<string> {
   console.log('→ Navigation vers la page des paiements...')
   await page.goto('https://www.rentila.com/landlord/#payments', { waitUntil: 'networkidle' })
-  console.log(`  URL : ${page.url()}`)
-
-  // Wait for any row with an id to appear
   await page.waitForFunction(() => {
     const row = document.querySelector('tr[id^="tr_"]')
     return row && row.id.length > 0

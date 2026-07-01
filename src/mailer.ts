@@ -7,12 +7,11 @@ interface DraftParams {
   type: 'avis' | 'quittance'
   month: string
   pdfPath: string
-  tenantNames: string
   tenantEmails: string[]
 }
 
 export function createDraft(params: DraftParams): void {
-  const { type, month, pdfPath, tenantNames, tenantEmails } = params
+  const { type, month, pdfPath, tenantEmails } = params
 
   const isAvis = type === 'avis'
   const subject = isAvis
