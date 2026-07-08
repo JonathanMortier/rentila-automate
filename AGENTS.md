@@ -86,6 +86,21 @@ Requête via `page.context().request.get(url)` (utilise la session Playwright).
 - Redirect URI : `http://localhost:8080/oauth2callback` (configuré dans Google Cloud Console)
 - Dégradé : si les vars Gmail sont absentes, skip proprement
 
+## Code de vérification — deux méthodes
+
+### Méthode 1 : IMAP + App Password (recommandée)
+- Utilise `imap` avec un mot de passe d'application Gmail
+- Le mot de passe d'application **n'expire jamais**
+- À configurer dans Google Account > Security > 2-Step Verification > App Passwords
+- Variable : `GMAIL_APP_PASSWORD` (prioritaire sur OAuth)
+- Pas d'OAuth nécessaire pour la lecture du code
+
+### Méthode 2 : OAuth2 Gmail API (fallback)
+- Utilise `gmail.users.messages.list` + `get` via l'API
+- Nécessite `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `GMAIL_REFRESH_TOKEN`
+- ⚠ Le refresh token expire après 7 jours si l'app Google est en mode "Testing"
+- Utilisé seulement si `GMAIL_APP_PASSWORD` n'est pas défini
+
 ## Modes d'exécution
 
 | Commande | DRY_RUN | DEBUG | Comportement |
@@ -109,13 +124,14 @@ Note : `DRY_RUN` est interprété comme `process.env.DRY_RUN === 'true'` — une
 | `GMAIL_CLIENT_ID` | Non | Client ID OAuth2 Google |
 | `GMAIL_CLIENT_SECRET` | Non | Client Secret OAuth2 Google |
 | `GMAIL_REFRESH_TOKEN` | Non | Refresh token (obtenu via `npm run auth:gmail`) |
+| `GMAIL_APP_PASSWORD` | Non | Mot de passe d'application Gmail (IMAP) — ne expire pas |
 | `DRY_RUN` | Non | `true` → skip Rentila, fake PDF |
 | `DEBUG` | Non | `true` → navigateur visible, slowMo, screenshots, reste ouvert |
 
 ## GitHub Actions
 
 ### Secrets à configurer
-`RENTILA_EMAIL`, `RENTILA_PASSWORD`, `TENANT_EMAILS`, `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `GMAIL_REFRESH_TOKEN`, `RENTILA_VERIFICATION_MODE`.
+`RENTILA_EMAIL`, `RENTILA_PASSWORD`, `TENANT_EMAILS`, `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `GMAIL_REFRESH_TOKEN`, `GMAIL_APP_PASSWORD`, `RENTILA_VERIFICATION_MODE`.
 
 ### État DRY_RUN
 - `avis-echeance.yml` : `DRY_RUN: false` (production)
@@ -126,6 +142,11 @@ Note : `DRY_RUN` est interprété comme `process.env.DRY_RUN === 'true'` — une
 npm run test:gmail      # Vérifie les scopes Gmail + cherche le dernier code Rentila
 npm run auth:gmail      # Obtient/renouvelle le refresh token
 ```
+
+## Priorité des méthodes de vérification
+`getVerificationCode()` utilise la première méthode disponible dans cet ordre :
+1. `GMAIL_APP_PASSWORD` (IMAP) — recommandé, ne expire jamais
+2. `GMAIL_REFRESH_TOKEN` (OAuth2) — fallback, expire après 7j en mode Testing
 
 ## Ce qui est testé ✓
 - Login Rentila avec gestion reCAPTCHA
@@ -148,3 +169,5 @@ npm run auth:gmail      # Obtient/renouvelle le refresh token
 - La recherche Gmail `is:unread` peut rater si l'email arrive avec du retard. Utiliser `after:YYYY/MM/DD` et `from:noreply@rentila.com` sans `is:unread`.
 - `DRY_RUN: false` en string dans un workflow ne doit PAS être évalué comme truthy. Utiliser `=== 'true'`.
 - Le port 8080 est utilisé par le callback OAuth — ne pas le bloquer.
+- IMAP : nécessite `GMAIL_APP_PASSWORD` (mot de passe d'application). Activer 2FA sur le compte Google pour pouvoir en générer un.
+- Le refresh token OAuth2 expire après 7 jours si l'app Google est en mode "Testing". Préférer `GMAIL_APP_PASSWORD`.
