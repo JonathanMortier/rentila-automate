@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import Imap from 'imap'
 import { google } from 'googleapis'
 import { CONFIG } from './config.js'
 
@@ -84,45 +85,129 @@ function extractEmailBody(payload: any): string {
   return ''
 }
 
-export async function getVerificationCode(): Promise<string> {
-  if (!CONFIG.gmail.clientId || !CONFIG.gmail.clientSecret || !CONFIG.gmail.refreshToken) {
-    throw new Error('Gmail non configuré (GMAIL_CLIENT_ID / CLIENT_SECRET / REFRESH_TOKEN requis)')
+function fetchIMAPBody(imap: Imap, boxName: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    imap.openBox(boxName, true, (err, box) => {
+      if (err) return reject(err)
+
+      const onFinish = (body: string) => {
+        imap.end()
+        resolve(body)
+      }
+
+      imap.search(['UNSEEN', ['FROM', 'noreply@rentila.com'], ['SUBJECT', 'Code de vérification']], (err, results) => {
+        if (err) return reject(err)
+        if (!results?.length) {
+          imap.end()
+          resolve('')
+          return
+        }
+
+        const fetch = imap.seq.fetch(results.slice(-1), { bodies: '', markSeen: false })
+        let body = ''
+
+        fetch.on('message', (msg) => {
+          msg.on('body', (stream) => {
+            let chunks = ''
+            stream.on('data', (chunk: Buffer) => { chunks += chunk.toString('utf-8') })
+            stream.on('end', () => { body += chunks })
+          })
+        })
+
+        fetch.once('end', () => {
+          imap.end()
+          resolve(body)
+        })
+
+        fetch.once('error', reject)
+      })
+    })
+  })
+}
+
+async function getVerificationCodeIMAP(): Promise<string> {
+  if (!CONFIG.gmail.appPassword) {
+    throw new Error('GMAIL_APP_PASSWORD requis pour la méthode IMAP')
   }
 
-  const auth = await authorize()
-  const gmail = google.gmail({ version: 'v1', auth })
-  const maxRetries = 12
-  const delayMs = 6000
+  const imap = new Imap({
+    user: CONFIG.rentila.email,
+    password: CONFIG.gmail.appPassword,
+    host: 'imap.gmail.com',
+    port: 993,
+    tls: true,
+    tlsOptions: { rejectUnauthorized: true },
+  })
 
-  // Wait a bit for the email to arrive before first search
+  const connect = () => new Promise<void>((resolve, reject) => {
+    imap.once('ready', resolve)
+    imap.once('error', reject)
+    imap.connect()
+  })
+
+  await connect()
+  const raw = await fetchIMAPBody(imap, 'INBOX')
+  const match = raw.match(/\b(\d{6})\b/)
+  if (match) return match[1]
+  throw new Error('Code de vérification introuvable dans les emails Rentila (IMAP)')
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(r => setTimeout(r, ms))
+}
+
+export async function getVerificationCode(): Promise<string> {
   console.log('  Attente de la réception de l\'email...')
-  await new Promise(r => setTimeout(r, 15000))
+  await sleep(15000)
 
-  const today = new Date().toISOString().slice(0, 10).replace(/-/g, '/')
+  const hasOAuth = CONFIG.gmail.clientId && CONFIG.gmail.clientSecret && CONFIG.gmail.refreshToken
+  const hasIMAP = !!CONFIG.gmail.appPassword
 
-  for (let i = 0; i < maxRetries; i++) {
-    const res = await gmail.users.messages.list({
-      userId: 'me',
-      q: `from:noreply@rentila.com subject:"Code de vérification" after:${today}`,
-      maxResults: 5,
-    })
-
-    const messageId = res.data.messages?.[0]?.id
-    if (messageId) {
-      const msg = await gmail.users.messages.get({
-        userId: 'me',
-        id: messageId,
-        format: 'full',
-      })
-
-      const body = extractEmailBody(msg.data.payload)
-      const match = body.match(/\b(\d{6})\b/)
-      if (match) return match[1]
+  if (hasIMAP) {
+    for (let i = 0; i < 12; i++) {
+      try {
+        return await getVerificationCodeIMAP()
+      } catch {
+        if (i < 11) {
+          console.log(`  En attente du code de vérification... (${i + 1}/12)`)
+          await sleep(6000)
+        }
+      }
     }
+    throw new Error('Code de vérification introuvable dans les emails Rentila')
+  }
 
-    if (i < maxRetries - 1) {
-      console.log(`  En attente du code de vérification... (${i + 1}/${maxRetries})`)
-      await new Promise(r => setTimeout(r, delayMs))
+  if (hasOAuth) {
+    const auth = await authorize()
+    const gmail = google.gmail({ version: 'v1', auth })
+    const today = new Date().toISOString().slice(0, 10).replace(/-/g, '/')
+
+    for (let i = 0; i < 12; i++) {
+      try {
+        const res = await gmail.users.messages.list({
+          userId: 'me',
+          q: `from:noreply@rentila.com subject:"Code de vérification" after:${today}`,
+          maxResults: 5,
+        })
+
+        const messageId = res.data.messages?.[0]?.id
+        if (messageId) {
+          const msg = await gmail.users.messages.get({ userId: 'me', id: messageId, format: 'full' })
+          const body = extractEmailBody(msg.data.payload)
+          const match = body.match(/\b(\d{6})\b/)
+          if (match) return match[1]
+        }
+
+        if (i < 11) {
+          console.log(`  En attente du code de vérification... (${i + 1}/12)`)
+          await sleep(6000)
+        }
+      } catch {
+        if (i < 11) {
+          console.log(`  En attente du code de vérification... (${i + 1}/12)`)
+          await sleep(6000)
+        }
+      }
     }
   }
 
