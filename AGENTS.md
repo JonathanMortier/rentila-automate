@@ -56,7 +56,7 @@ rentila-automate/
 Quand GitHub Actions headless est détecté, Rentila redirige vers une page de vérification avec code envoyé par email. La fonction `handleGmailVerificationCode()` :
 1. Clique sur "Envoyer" pour déclencher l'email
 2. Appelle `getVerificationCode()` (via Gmail API, search `from:noreply@rentila.com subject:"Code de vérification" after:YYYY/MM/DD`)
-3. Extrait le code à 6 chiffres du corps HTML de l'email (via `extractEmailBody()` qui parcourt les parties MIME récursivement)
+3. Extrait le code à 6 chiffres du corps HTML de l'email (via `extractEmailBody()` qui parcourt les parties MIME récursivement, fallback HTML si text/plain vide)
 4. Remplit l'input et submit
 5. Attend `/landlord/**`
 
@@ -85,6 +85,12 @@ Requête via `page.context().request.get(url)` (utilise la session Playwright).
 - Auth : Refresh token stocké dans `.env` (obtenu via `npm run auth:gmail`)
 - Redirect URI : `http://localhost:8080/oauth2callback` (configuré dans Google Cloud Console)
 - Dégradé : si les vars Gmail sont absentes, skip proprement
+
+## Code de vérification
+
+- Utilise `gmail.users.messages.list` + `get` via l'API Gmail
+- Nécessite `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `GMAIL_REFRESH_TOKEN`
+- L'app Google doit être publiée ("In Production") pour que le refresh token ne expire pas
 
 ## Modes d'exécution
 
@@ -127,6 +133,9 @@ npm run test:gmail      # Vérifie les scopes Gmail + cherche le dernier code Re
 npm run auth:gmail      # Obtient/renouvelle le refresh token
 ```
 
+## Méthode de vérification
+`getVerificationCode()` utilise l'API Gmail (`users.messages.list` + `get`) avec le refresh token OAuth2.
+
 ## Ce qui est testé ✓
 - Login Rentila avec gestion reCAPTCHA
 - Anti-détection headless (User-Agent, webdriver, --disable-blink-features)
@@ -147,4 +156,4 @@ npm run auth:gmail      # Obtient/renouvelle le refresh token
 - L'email de vérification Rentila est en **HTML uniquement** (`text/plain` vide). Ne pas chercher le code dans le text/plain. Utiliser `extractEmailBody()` qui tombe sur le HTML en fallback.
 - La recherche Gmail `is:unread` peut rater si l'email arrive avec du retard. Utiliser `after:YYYY/MM/DD` et `from:noreply@rentila.com` sans `is:unread`.
 - `DRY_RUN: false` en string dans un workflow ne doit PAS être évalué comme truthy. Utiliser `=== 'true'`.
-- Le port 8080 est utilisé par le callback OAuth — ne pas le bloquer.
+- L'app Google doit être publiée ("In Production") pour que le refresh token ne expire pas.

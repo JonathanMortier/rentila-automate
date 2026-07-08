@@ -84,45 +84,45 @@ function extractEmailBody(payload: any): string {
   return ''
 }
 
+
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(r => setTimeout(r, ms))
+}
+
 export async function getVerificationCode(): Promise<string> {
-  if (!CONFIG.gmail.clientId || !CONFIG.gmail.clientSecret || !CONFIG.gmail.refreshToken) {
-    throw new Error('Gmail non configuré (GMAIL_CLIENT_ID / CLIENT_SECRET / REFRESH_TOKEN requis)')
-  }
+  console.log('  Attente de la réception de l\'email...')
+  await sleep(15000)
 
   const auth = await authorize()
   const gmail = google.gmail({ version: 'v1', auth })
-  const maxRetries = 12
-  const delayMs = 6000
-
-  // Wait a bit for the email to arrive before first search
-  console.log('  Attente de la réception de l\'email...')
-  await new Promise(r => setTimeout(r, 15000))
-
   const today = new Date().toISOString().slice(0, 10).replace(/-/g, '/')
 
-  for (let i = 0; i < maxRetries; i++) {
-    const res = await gmail.users.messages.list({
-      userId: 'me',
-      q: `from:noreply@rentila.com subject:"Code de vérification" after:${today}`,
-      maxResults: 5,
-    })
-
-    const messageId = res.data.messages?.[0]?.id
-    if (messageId) {
-      const msg = await gmail.users.messages.get({
+  for (let i = 0; i < 12; i++) {
+    try {
+      const res = await gmail.users.messages.list({
         userId: 'me',
-        id: messageId,
-        format: 'full',
+        q: `from:noreply@rentila.com subject:"Code de vérification" after:${today}`,
+        maxResults: 5,
       })
 
-      const body = extractEmailBody(msg.data.payload)
-      const match = body.match(/\b(\d{6})\b/)
-      if (match) return match[1]
-    }
+      const messageId = res.data.messages?.[0]?.id
+      if (messageId) {
+        const msg = await gmail.users.messages.get({ userId: 'me', id: messageId, format: 'full' })
+        const body = extractEmailBody(msg.data.payload)
+        const match = body.match(/\b(\d{6})\b/)
+        if (match) return match[1]
+      }
 
-    if (i < maxRetries - 1) {
-      console.log(`  En attente du code de vérification... (${i + 1}/${maxRetries})`)
-      await new Promise(r => setTimeout(r, delayMs))
+      if (i < 11) {
+        console.log(`  En attente du code de vérification... (${i + 1}/12)`)
+        await sleep(6000)
+      }
+    } catch {
+      if (i < 11) {
+        console.log(`  En attente du code de vérification... (${i + 1}/12)`)
+        await sleep(6000)
+      }
     }
   }
 

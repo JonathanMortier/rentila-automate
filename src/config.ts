@@ -8,7 +8,6 @@ export const CONFIG = {
   },
   tenants: {
     emails: env('TENANT_EMAILS').split(',').map(s => s.trim()).filter(Boolean),
-    names: env('TENANT_NAMES'),
   },
   gmail: {
     clientId: env('GMAIL_CLIENT_ID'),
