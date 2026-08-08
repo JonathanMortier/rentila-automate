@@ -77,11 +77,21 @@ function extractEmailBody(payload: any): string {
   }
 
   if (htmlBody) {
-    const stripped = htmlBody.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim()
+    const stripped = stripHtml(htmlBody)
     if (stripped) return stripped
   }
 
   return ''
+}
+
+function stripHtml(html: string): string {
+  let previous = html
+  let current = html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ')
+  while (current !== previous) {
+    previous = current
+    current = current.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ')
+  }
+  return current.trim()
 }
 
 
