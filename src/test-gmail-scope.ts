@@ -2,13 +2,11 @@ import { google } from 'googleapis'
 import 'dotenv/config'
 
 function stripHtml(html: string): string {
-  let previous = html
-  let current = html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ')
-  while (current !== previous) {
-    previous = current
-    current = current.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ')
-  }
-  return current.trim()
+  return html
+    .replace(/</g, '')
+    .replace(/>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .trim()
 }
 
 async function main() {
