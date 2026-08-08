@@ -54,7 +54,7 @@ export async function downloadAvis(): Promise<void> {
 export async function markPaidAndDownloadQuittance(): Promise<void> {
   const label = monthLabel()
   const folder = ensureDir(label)
-  const pdfPath = path.join(folder, `quittance-${sanitize(label)}.pdf`)
+  const pdfPath = path.join(folder, `Quittance ${stripAccents(label)}.pdf`)
 
   if (DRY_RUN) return dryRun('quittance', label, pdfPath)
 
@@ -270,9 +270,9 @@ async function screenshot(page: Page, name: string): Promise<void> {
 }
 
 function sanitize(str: string): string {
-  return str
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9-]+/gi, '-')
-    .toLowerCase()
+  return stripAccents(str).replace(/[^a-z0-9-]+/gi, '-').toLowerCase()
+}
+
+function stripAccents(str: string): string {
+  return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
 }
