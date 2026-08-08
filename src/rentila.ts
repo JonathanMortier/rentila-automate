@@ -150,10 +150,10 @@ async function login(page: Page, screenshotDir?: string): Promise<void> {
 
   let onLandlord = false
   try {
-    await page.waitForURL('**/landlord/**', { timeout: 15000 })
+    await page.waitForURL('**/landlord/**', { timeout: 30000 })
     onLandlord = true
   } catch {
-    // Not on landlord — might be verification page
+    onLandlord = page.url().includes('/landlord/')
   }
 
   if (!onLandlord) {
@@ -170,8 +170,23 @@ async function login(page: Page, screenshotDir?: string): Promise<void> {
     }
   }
 
+  await closeTermsModal(page)
   await page.waitForTimeout(1000)
   console.log(`✓ Connecté (${page.url()})`)
+}
+
+async function closeTermsModal(page: Page): Promise<void> {
+  const buttons = page.locator('button').filter({ hasText: /fermer|close|j.?accepte|accepter/i })
+  const count = await buttons.count()
+  for (let i = 0; i < count; i++) {
+    const btn = buttons.nth(i)
+    if (await btn.isVisible().catch(() => false)) {
+      await btn.click()
+      await page.waitForTimeout(500)
+      console.log('  ✓ Popup Conditions Générales fermé')
+      return
+    }
+  }
 }
 
 async function handleGmailVerificationCode(page: Page, screenshotDir?: string): Promise<void> {
@@ -184,6 +199,8 @@ async function handleGmailVerificationCode(page: Page, screenshotDir?: string): 
   if (await envoyerBtn.isVisible().catch(() => false)) {
     await envoyerBtn.click()
     console.log('  ✓ Email de vérification demandé')
+  } else {
+    console.log('  ⚠ Bouton "Envoyer le code" introuvable — aucun email ne sera envoyé')
   }
   await page.screenshot({ path: path.join(debugDir, 'after-click-envoyer.png'), fullPage: true })
 
