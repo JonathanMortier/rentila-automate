@@ -270,5 +270,9 @@ async function screenshot(page: Page, name: string): Promise<void> {
 }
 
 function sanitize(str: string): string {
-  return str.replace(/[^a-z0-9-]+/gi, '-').toLowerCase()
+  return str
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9-]+/gi, '-')
+    .toLowerCase()
 }
