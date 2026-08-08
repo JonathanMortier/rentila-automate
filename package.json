@@ -12,7 +12,7 @@
     "test:gmail": "npx tsx src/test-gmail-scope.ts"
   },
   "dependencies": {
-    "dotenv": "^16.4.7",
+    "dotenv": "^17.4.2",
     "googleapis": "^173.0.0",
     "playwright": "^1.52.0"
   },
