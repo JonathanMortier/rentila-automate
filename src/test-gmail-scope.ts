@@ -1,13 +1,6 @@
 import { google } from 'googleapis'
 import 'dotenv/config'
-
-function stripHtml(html: string): string {
-  return html
-    .replace(/</g, '')
-    .replace(/>/g, '')
-    .replace(/&nbsp;/g, ' ')
-    .trim()
-}
+import { stripHtml } from './utils.js'
 
 async function main() {
   const clientId = process.env.GMAIL_CLIENT_ID

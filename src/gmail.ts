@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { google } from 'googleapis'
 import { CONFIG } from './config.js'
+import { stripHtml } from './utils.js'
 
 export async function authorize() {
   const oauth2Client = new google.auth.OAuth2({
@@ -82,16 +83,6 @@ function extractEmailBody(payload: any): string {
   }
 
   return ''
-}
-
-function stripHtml(html: string): string {
-  let previous = html
-  let current = html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ')
-  while (current !== previous) {
-    previous = current
-    current = current.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ')
-  }
-  return current.trim()
 }
 
 
