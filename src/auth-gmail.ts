@@ -9,6 +9,14 @@ const SCOPES = [
 ]
 const PORT = 8080
 
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
 async function main() {
   const oauth2Client = new google.auth.OAuth2({
     clientId: CONFIG.gmail.clientId,
@@ -52,7 +60,7 @@ async function main() {
 
       if (error) {
         res.writeHead(400)
-        res.end(`Erreur: ${error}`)
+        res.end(`Erreur: ${escapeHtml(error)}`)
         reject(new Error(`Google auth error: ${error}`))
         return
       }

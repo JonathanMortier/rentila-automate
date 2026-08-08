@@ -15,9 +15,12 @@ rentila-automate/
 │   ├── auth-gmail.ts         # Script one-shot pour obtenir le refresh token
 │   ├── test-gmail-scope.ts   # Test des scopes Gmail API
 │   └── config.ts             # Variables d'environnement + mois français
-├── .github/workflows/
-│   ├── avis-echeance.yml     # Cron 1er du mois + déclenchement manuel
-│   └── quittance.yml         # Déclenchement manuel uniquement
+├── .github/
+│   ├── workflows/
+│   │   ├── avis-echeance.yml     # Cron 1er du mois + déclenchement manuel
+│   │   ├── quittance.yml         # Déclenchement manuel uniquement
+│   │   └── codeql.yml            # Scan CodeQL (actions + javascript-typescript)
+│   └── dependabot.yml            # Mises à jour npm, target-branch develop
 └── .env                      # Secrets locaux (gitignoré)
 ```
 
@@ -38,6 +41,13 @@ rentila-automate/
 5. Téléchargement : `GET /landlord/payments/{id}/download` (sans `?avis=1`)
 6-7. Identique à l'avis
 
+### Nommage des fichiers PDF
+- Dossier : `downloads/{mois-annee}/` sans accents → `downloads/aout-2026/`
+- Avis : `Avis échéance {mois} {annee}.pdf` → `Avis échéance aout 2026.pdf`
+- Quittance : `Quittance {mois} {annee}.pdf` → `Quittance aout 2026.pdf`
+- Mois/année adaptés automatiquement ; le mois garde l'accent sur "échéance" mais les accents du mois sont retirés (`août` → `aout`)
+- Implémenté via `stripAccents()` (normalisation NFD + suppression des marques diacritiques) et `sanitize()`
+
 ## Connexion Rentila
 
 - URL : `https://www.rentila.com/`
@@ -47,6 +57,16 @@ rentila-automate/
 - Contournement : `form.submit()` en JS direct (pas de clic sur le bouton)
 - Redirection attendue : `**/landlord/**`
 
+### Robustesse de la détection de login (dans `login()`)
+- `waitForURL('**/landlord/**')` avec timeout **30s** (au lieu de 15s)
+- Si timeout : fallback `page.url().includes('/landlord/')` — un timeout avec URL landlord = login réussi (évite de déclencher à tort la vérification email)
+
+### Popup Conditions Générales (dans `closeTermsModal()`)
+Depuis le **04/08/2026**, Rentila affiche un popup "Mise à jour de nos Conditions Générales d'Utilisation" sur le dashboard après login. Il peut bloquer l'interaction avec les éléments de la page. La fonction `closeTermsModal()` :
+1. Cherche un bouton `fermer | close | j'accepte | accepter`
+2. Clique sur le premier visible et continue
+3. Est appelée dans `login()` après confirmation du dashboard, avant la navigation vers `/#payments`
+
 ### Anti-détection (dans `launchBrowser()`)
 - `args: ['--no-sandbox', '--disable-blink-features=AutomationControlled']`
 - User Agent Windows Chrome réaliste
@@ -54,7 +74,7 @@ rentila-automate/
 
 ### Vérification email (RENTILA_VERIFICATION_MODE=gmail)
 Quand GitHub Actions headless est détecté, Rentila redirige vers une page de vérification avec code envoyé par email. La fonction `handleGmailVerificationCode()` :
-1. Clique sur "Envoyer" pour déclencher l'email
+1. Clique sur "Envoyer" pour déclencher l'email (si le bouton est introuvable, log `⚠ Bouton "Envoyer le code" introuvable` — aucun email ne sera envoyé)
 2. Appelle `getVerificationCode()` (via Gmail API, search `from:noreply@rentila.com subject:"Code de vérification" after:YYYY/MM/DD`)
 3. Extrait le code à 6 chiffres du corps HTML de l'email (via `extractEmailBody()` qui parcourt les parties MIME récursivement, fallback HTML si text/plain vide)
 4. Remplit l'input et submit
@@ -125,7 +145,18 @@ Note : `DRY_RUN` est interprété comme `process.env.DRY_RUN === 'true'` — une
 
 ### État DRY_RUN
 - `avis-echeance.yml` : `DRY_RUN: false` (production)
-- `quittance.yml` : `DRY_RUN: true` (à passer à `false` pour la prod)
+- `quittance.yml` : `DRY_RUN: false` (production)
+
+### Branches
+- `develop` : branche de développement, cible des PR (toutes les PR, y compris Dependabot, pointent vers develop)
+- `main` : branche de production, mise à jour via une PR "Develop" (develop → main)
+- Dependabot configuré dans `.github/dependabot.yml` avec `target-branch: "develop"` (lu depuis `main`, la branche par défaut)
+
+### Workflow CodeQL (`.github/workflows/codeql.yml`)
+- Langages analysés : `actions` + `javascript-typescript` (build-mode `none`)
+- Queries : `security-extended,security-and-quality`
+- Déclencheurs : push et PR vers `develop`, cron mercredi 1h23 UTC
+- **Limitation** : le repo est **privé** sur plan Free/Pro → le code scanning n'est pas disponible pour GitHub (il faut Team/Enterprise + GitHub Code Security). L'analyse tourne mais émet le warning `Code scanning is not enabled for this repository` (non bloquant, résultats non remontés).
 
 ### Scripts utiles
 ```bash
@@ -139,8 +170,11 @@ npm run auth:gmail      # Obtient/renouvelle le refresh token
 ## Ce qui est testé ✓
 - Login Rentila avec gestion reCAPTCHA
 - Anti-détection headless (User-Agent, webdriver, --disable-blink-features)
+- Détection robuste du login (timeout 30s + fallback URL `/landlord/`)
+- Fermeture du popup Conditions Générales (`closeTermsModal`)
 - Navigation `/#payments` et extraction ID
 - Téléchargement PDF avis et quittance
+- Nommage des fichiers sans accents (`Avis échéance aout 2026.pdf`, `Quittance aout 2026.pdf`)
 - Brouillon local (.txt)
 - Brouillon Gmail (compose)
 - Dry run complet
@@ -153,7 +187,11 @@ npm run auth:gmail      # Obtient/renouvelle le refresh token
 - `--disable-blink-features=AutomationControlled` + userAgent réaliste + `addInitScript` nécessaires pour éviter la détection headless.
 - SPA hash routing : `waitUntil: 'networkidle'` se déclenche avant le chargement des données. Utiliser `waitForFunction` à la place.
 - L'URL après login peut être `/register/confirm` (vérification email) au lieu de `/landlord/**`. Déclencher `RENTILA_VERIFICATION_MODE=gmail`.
+- Le popup CGU (depuis le 04/08/2026) peut bloquer le dashboard après login — toujours passer par `closeTermsModal()`.
+- Un timeout de `waitForURL('**/landlord/**')` avec URL déjà sur `/landlord/` = login réussi. Ne pas déclencher la vérification email dans ce cas (sinon échec "code introuvable" car aucun email n'est envoyé).
 - L'email de vérification Rentila est en **HTML uniquement** (`text/plain` vide). Ne pas chercher le code dans le text/plain. Utiliser `extractEmailBody()` qui tombe sur le HTML en fallback.
 - La recherche Gmail `is:unread` peut rater si l'email arrive avec du retard. Utiliser `after:YYYY/MM/DD` et `from:noreply@rentila.com` sans `is:unread`.
 - `DRY_RUN: false` en string dans un workflow ne doit PAS être évalué comme truthy. Utiliser `=== 'true'`.
 - L'app Google doit être publiée ("In Production") pour que le refresh token ne expire pas.
+- Ne pas laisser d'accents dans les noms de fichiers téléchargés : `sanitize()`/`stripAccents()` gèrent les mois accentués (`août` → `aout`).
+- CodeQL sur repo privé Free/Pro : warning `Code scanning is not enabled` non bloquant — pas d'UI « Code security and analysis » disponible.

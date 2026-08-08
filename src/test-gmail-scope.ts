@@ -1,5 +1,6 @@
 import { google } from 'googleapis'
 import 'dotenv/config'
+import { stripHtml } from './utils.js'
 
 async function main() {
   const clientId = process.env.GMAIL_CLIENT_ID
@@ -56,7 +57,9 @@ async function main() {
       maxResults: 1,
     })
     if (testRes.data.messages?.length) {
-      const msg = await gmail.users.messages.get({ userId: 'me', id: testRes.data.messages[0].id, format: 'full' })
+      const msgId = testRes.data.messages[0].id
+      if (!msgId) return
+      const msg = await gmail.users.messages.get({ userId: 'me', id: msgId, format: 'full' })
       let body = ''
       if (msg.data.payload?.body?.data) {
         body = Buffer.from(msg.data.payload.body.data, 'base64').toString('utf-8')
@@ -71,7 +74,7 @@ async function main() {
           body = Buffer.from(part.body.data, 'base64').toString('utf-8')
         }
       }
-      const stripped = body.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ')
+      const stripped = stripHtml(body)
       const code = stripped.match(/\b(\d{6})\b/)
       console.log(`📧 Dernier email Rentila trouvé`)
       console.log(`   Code : ${code ? code[1] : 'non trouvé'}`)
