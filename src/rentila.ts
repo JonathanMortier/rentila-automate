@@ -24,7 +24,7 @@ async function dryRun(type: 'avis' | 'quittance', label: string, pdfPath: string
 export async function downloadAvis(): Promise<void> {
   const label = monthLabel()
   const folder = ensureDir(label)
-  const pdfPath = path.join(folder, `avis-echeance-${sanitize(label)}.pdf`)
+  const pdfPath = path.join(folder, `Avis échéance ${stripAccents(label)}.pdf`)
 
   if (DRY_RUN) return dryRun('avis', label, pdfPath)
 
