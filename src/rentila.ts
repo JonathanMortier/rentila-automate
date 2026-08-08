@@ -24,7 +24,7 @@ async function dryRun(type: 'avis' | 'quittance', label: string, pdfPath: string
 export async function downloadAvis(): Promise<void> {
   const label = monthLabel()
   const folder = ensureDir(label)
-  const pdfPath = path.join(folder, `avis-echeance-${sanitize(label)}.pdf`)
+  const pdfPath = path.join(folder, `Avis échéance ${stripAccents(label)}.pdf`)
 
   if (DRY_RUN) return dryRun('avis', label, pdfPath)
 
@@ -54,7 +54,7 @@ export async function downloadAvis(): Promise<void> {
 export async function markPaidAndDownloadQuittance(): Promise<void> {
   const label = monthLabel()
   const folder = ensureDir(label)
-  const pdfPath = path.join(folder, `quittance-${sanitize(label)}.pdf`)
+  const pdfPath = path.join(folder, `Quittance ${stripAccents(label)}.pdf`)
 
   if (DRY_RUN) return dryRun('quittance', label, pdfPath)
 
@@ -150,10 +150,10 @@ async function login(page: Page, screenshotDir?: string): Promise<void> {
 
   let onLandlord = false
   try {
-    await page.waitForURL('**/landlord/**', { timeout: 15000 })
+    await page.waitForURL('**/landlord/**', { timeout: 30000 })
     onLandlord = true
   } catch {
-    // Not on landlord — might be verification page
+    onLandlord = page.url().includes('/landlord/')
   }
 
   if (!onLandlord) {
@@ -170,8 +170,23 @@ async function login(page: Page, screenshotDir?: string): Promise<void> {
     }
   }
 
+  await closeTermsModal(page)
   await page.waitForTimeout(1000)
   console.log(`✓ Connecté (${page.url()})`)
+}
+
+async function closeTermsModal(page: Page): Promise<void> {
+  const buttons = page.locator('button').filter({ hasText: /fermer|close|j.?accepte|accepter/i })
+  const count = await buttons.count()
+  for (let i = 0; i < count; i++) {
+    const btn = buttons.nth(i)
+    if (await btn.isVisible().catch(() => false)) {
+      await btn.click()
+      await page.waitForTimeout(500)
+      console.log('  ✓ Popup Conditions Générales fermé')
+      return
+    }
+  }
 }
 
 async function handleGmailVerificationCode(page: Page, screenshotDir?: string): Promise<void> {
@@ -184,6 +199,8 @@ async function handleGmailVerificationCode(page: Page, screenshotDir?: string): 
   if (await envoyerBtn.isVisible().catch(() => false)) {
     await envoyerBtn.click()
     console.log('  ✓ Email de vérification demandé')
+  } else {
+    console.log('  ⚠ Bouton "Envoyer le code" introuvable — aucun email ne sera envoyé')
   }
   await page.screenshot({ path: path.join(debugDir, 'after-click-envoyer.png'), fullPage: true })
 
@@ -253,5 +270,9 @@ async function screenshot(page: Page, name: string): Promise<void> {
 }
 
 function sanitize(str: string): string {
-  return str.replace(/[^a-z0-9-]+/gi, '-').toLowerCase()
+  return stripAccents(str).replace(/[^a-z0-9-]+/gi, '-').toLowerCase()
+}
+
+function stripAccents(str: string): string {
+  return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
 }
